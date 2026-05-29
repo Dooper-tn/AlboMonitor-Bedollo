@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev)",
+      "Read(//c/Users/andre/AppData/Local/Temp/claude/c--Users-andre-Desktop-Antigravity-PrimoProgetto/tasks/**)",
+      "Read(//c/Users/andre/.claude/plugins/cache/ui-ux-pro-max-skill/ui-ux-pro-max/2.0.1/.claude/skills/ui-ux-pro-max/**)",
+      "Bash(python scripts/search.py \"government civic service minimalism clean\" --design-system -p \"AlboMonitor\")"
+    ]
+  }
+}

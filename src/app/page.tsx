@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { subscribeEmail } from "./actions";
 
 export default function Home() {
@@ -8,171 +8,213 @@ export default function Home() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const handleSubmit = async (e: FormEvent) => {
+  useEffect(() => {
+    // Standard URL search params parsing, robust for builds (no useSearchParams Suspense warning)
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get("error");
+    if (err) {
+      if (err === "token_mancante") setErrorMsg("Il link di verifica è incompleto o non valido.");
+      else if (err === "token_non_valido") setErrorMsg("Il link di verifica è scaduto o inesistente. Prova a registrarti nuovamente.");
+      else if (err === "db_error") setErrorMsg("Errore interno di verifica del server. Ti preghiamo di riprovare più tardi.");
+      else setErrorMsg("Si è verificato un errore durante l'attivazione. Riprova.");
+
+      // Clean the URL query params without triggering page reload
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
+  const handleSubscribe = async (e: FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim() || !email.includes("@")) {
+      setMessage("Inserisci un indirizzo email valido.");
+      return;
+    }
 
     setLoading(true);
     setMessage("");
+    setErrorMsg("");
 
-    const result = await subscribeEmail(email);
+    try {
+      const result = await subscribeEmail({ email });
 
-    setLoading(false);
-
-    if (result.error) {
-      setMessage(result.error);
-    } else {
-      setSubmitted(true);
-      setMessage("Grazie per esserti iscritto!");
+      if (result.error) {
+        setMessage(result.error);
+      } else {
+        setMessage(result.message || "Ti abbiamo inviato un link! Controlla la tua email per completare l'operazione.");
+        setSubmitted(true);
+      }
+    } catch {
+      setMessage("Errore di rete. Riprova più tardi.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-white">
-      {/* Top Navigation */}
-      <header className="container top-nav">
-        <div className="logo">
-          <div className="logo-icon">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect width="18" height="18" x="3" y="3" rx="2" />
-              <path d="M3 9h18" />
-              <path d="M9 21V9" />
-            </svg>
-          </div>
-          AlboMonitor
+    <div className="flex min-h-screen flex-col">
+      {/* ===== HEADER ===== */}
+      <header className="page-container site-header">
+        <div className="site-logo flex items-center gap-2">
+          <img src="/stemma-bedollo.png" alt="Stemma Comune di Bedollo" style={{ height: "32px", width: "auto" }} />
+          <span>AlboMonitor Bedollo</span>
         </div>
-        <div className="hidden sm:block">
-          <a href="#" className="nav-link">
-            Non hai ancora un account? <span>Iscriviti ora</span>
-          </a>
-        </div>
+        <a href="#come-funziona" className="site-nav-link">
+          Come funziona
+        </a>
       </header>
 
-      {/* Main Content */}
-      <main className="container flex flex-grow flex-col items-center justify-center py-12 text-center sm:py-24">
-        {/* Illustration Placeholder */}
-        <div className="illustration animate-up">
-          <svg
-            width="120"
-            height="120"
-            viewBox="0 0 120 120"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M40 85L80 85M20 100L100 100M60 20V80M50 30L60 20L70 30"
-              stroke="#ff5c22"
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <rect
-              x="30"
-              y="15"
-              width="60"
-              height="80"
-              rx="4"
-              stroke="#1a1a1a"
-              strokeWidth="2"
-            />
-          </svg>
-        </div>
-
-        {/* Hero Section */}
-        <div className="animate-up mb-12 max-w-2xl" style={{ animationDelay: "0.1s" }}>
-          <h1 className="title">L'Albo Pretorio, semplificato.</h1>
-          <p className="subtitle">
-            Ricevi un riassunto chiaro dei nuovi bandi e atti ufficiali del tuo comune,
-            grazie all'intelligenza artificiale.
-          </p>
-        </div>
-
-        {/* Subscription Form */}
-        <div className="animate-up w-full max-w-md" style={{ animationDelay: "0.2s" }}>
-          {!submitted ? (
-            <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-              <div className="flex flex-col items-start gap-2">
-                <label htmlFor="email-input" className="pl-4 text-sm font-semibold uppercase tracking-tight text-slate-500">
-                  Email
-                </label>
-                <input
-                  id="email-input"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="es. mario.rossi@email.it"
-                  required
-                  className="input-field"
-                  disabled={loading}
-                />
-              </div>
-              <button type="submit" className="btn-primary" disabled={loading}>
-                {loading ? "Invio in corso..." : "Ricevi gli aggiornamenti"}
-              </button>
-              <div className="mt-4 flex flex-col items-center justify-center gap-4 border-t border-slate-100 pt-6">
-                <button type="button" className="text-sm font-medium text-slate-400 hover:text-slate-600">
-                  &larr; Torna alla home
-                </button>
-              </div>
-              {message && <p className="mt-2 text-sm font-medium text-red-500">{message}</p>}
-            </form>
-          ) : (
-            <div className="flex flex-col items-center gap-6 py-8">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-orange-50 text-orange-500">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-8 w-8"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={3}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M5 13l4 4L19 7"
-                  />
+      {/* ===== MAIN HERO SECTION ===== */}
+      <main className="flex-1">
+        <section className="page-container" style={{ paddingTop: "var(--space-16)", paddingBottom: "var(--space-20)" }}>
+          
+          {errorMsg && (
+            <div className="animate-in pref-card error-msg" style={{ marginBottom: "var(--space-6)", borderColor: "var(--color-error)", backgroundColor: "var(--color-error-light)", padding: "var(--space-4)", borderRadius: "8px" }}>
+              <div className="flex items-center gap-2">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-error)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
+                <span style={{ fontSize: "var(--text-small)", color: "var(--color-text-primary)", fontWeight: 500 }}>{errorMsg}</span>
               </div>
-              <div className="space-y-2">
-                <p className="text-2xl font-bold text-slate-900">Ottimo lavoro!</p>
-                <p className="text-slate-500">
-                  Ti abbiamo inviato un'email a <span className="font-semibold text-orange-500">{email}</span>.
-                </p>
-              </div>
-              <button onClick={() => setSubmitted(false)} className="text-sm font-semibold text-slate-400 hover:text-orange-500">
-                Usa un altro indirizzo
-              </button>
             </div>
           )}
-        </div>
 
-        {/* Feature Pills */}
-        <div className="animate-up mt-16 flex flex-wrap justify-center gap-4" style={{ animationDelay: "0.3s" }}>
-          <div className="feature-pill">Monitoring AI</div>
-          <div className="feature-pill">Aggiornamenti quotidiani</div>
-          <div className="feature-pill">Analisi PDF</div>
-        </div>
+          <div className="animate-in">
+            <h1 className="hero-title">
+              L&apos;Albo Pretorio del Comune di Bedollo,<br />
+              semplificato e comprensibile.
+            </h1>
+          </div>
+
+          <p className="animate-in hero-subtitle" style={{ marginTop: "var(--space-5)", animationDelay: "0.1s" }}>
+            Ricevi un riassunto chiaro dei nuovi avvisi del Comune di Bedollo, elaborato dall&apos;AI per leggerlo in linguaggio chiaro e comprensibile, consegnato direttamente nella tua casella email.
+          </p>
+
+          {/* Form / Success Feedback */}
+          <div className="animate-in" style={{ marginTop: "var(--space-10)", animationDelay: "0.2s" }}>
+            {!submitted ? (
+              <div>
+                <form onSubmit={handleSubscribe} className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                  <div className="flex-1 flex flex-col gap-1">
+                    <input
+                      id="email-input"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="Il tuo indirizzo email"
+                      required
+                      className="input-field"
+                      disabled={loading}
+                      aria-label="Indirizzo email"
+                    />
+                  </div>
+                  <button type="submit" className="btn-primary" disabled={loading}>
+                    {loading ? "Invio in corso..." : "Ricevi gli aggiornamenti"}
+                  </button>
+                </form>
+
+                <div className="trust-row" style={{ marginTop: "var(--space-6)" }}>
+                  <span className="trust-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+                    Gratuito
+                  </span>
+                  <span className="trust-dot" />
+                  <span className="trust-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    Nessuno spam
+                  </span>
+                  <span className="trust-dot" />
+                  <span className="trust-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+                    Cancellati quando vuoi
+                  </span>
+                </div>
+
+                {message && <p className="error-msg" style={{ marginTop: "var(--space-3)" }}>{message}</p>}
+              </div>
+            ) : (
+              <div className="animate-in flex flex-col items-center" style={{ gap: "var(--space-5)", padding: "var(--space-8) var(--space-4)", backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "12px", boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
+                <div className="success-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                    <polyline points="22,6 12,13 2,6" />
+                  </svg>
+                </div>
+                <div className="text-center" style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)", maxWidth: "500px" }}>
+                  <h2 style={{ fontFamily: "var(--font-serif)", fontSize: "var(--text-h2)", fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>
+                    Controlla la tua email
+                  </h2>
+                  <p style={{ fontSize: "var(--text-body)", color: "var(--color-text-secondary)", lineHeight: "var(--leading-relaxed)" }}>
+                    {message}
+                  </p>
+                  <p style={{ fontSize: "var(--text-small)", color: "var(--color-text-tertiary)", marginTop: "var(--space-2)" }}>
+                    Email di destinazione: <strong style={{ color: "var(--color-primary)" }}>{email}</strong>
+                  </p>
+                </div>
+                <button onClick={() => setSubmitted(false)} className="btn-secondary" style={{ marginTop: "var(--space-2)" }}>
+                  Torna indietro
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ===== COME FUNZIONA ===== */}
+        <section id="come-funziona" className="steps-section" style={{ padding: "var(--space-20) 0" }}>
+          <div className="page-container">
+            <h2
+              className="animate-in"
+              style={{
+                fontFamily: "var(--font-serif)",
+                fontSize: "var(--text-h2)",
+                fontWeight: 700,
+                color: "var(--color-text-primary)",
+                marginBottom: "var(--space-8)",
+              }}
+            >
+              Come funziona
+            </h2>
+
+            <div className="steps-grid">
+              {/* Step 1 */}
+              <div className="step-card animate-in" style={{ animationDelay: "0.05s" }}>
+                <div className="step-number">01</div>
+                <h3 className="step-title">Fornisci la tua email</h3>
+                <p className="step-desc">
+                  Nessuna registrazione formale, nessuna password. Ti basta inserire l&apos;indirizzo email per richiedere il link di attivazione.
+                </p>
+              </div>
+
+              {/* Step 2 */}
+              <div className="step-card animate-in" style={{ animationDelay: "0.15s" }}>
+                <div className="step-number">02</div>
+                <h3 className="step-title">Verifica e personalizza</h3>
+                <p className="step-desc">
+                  Clicca sul link ricevuto per email per verificare il tuo indirizzo. Scegli subito quali categorie di atti ti interessano.
+                </p>
+              </div>
+
+              {/* Step 3 */}
+              <div className="step-card animate-in" style={{ animationDelay: "0.25s" }}>
+                <div className="step-number">03</div>
+                <h3 className="step-title">Ricevi i riassunti AI</h3>
+                <p className="step-desc">
+                  Ad ogni nuova pubblicazione, riceverai un&apos;email con riassunti in linguaggio semplice, chiaro e privo di burocrazia.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
 
-      {/* Footer */}
-      <footer className="mt-auto py-12 text-center">
-        <p className="text-sm font-medium tracking-tight text-slate-400">
-          AlboMonitor &bull; Bedollo Digital &bull; 2024
-        </p>
+      {/* ===== FOOTER ===== */}
+      <footer className="page-container site-footer" style={{ padding: "var(--space-8) 0", borderTop: "1px solid var(--color-border)" }}>
+        <div className="flex items-center justify-between" style={{ minHeight: "44px" }}>
+          <p style={{ margin: 0 }}>Un servizio civico per la comunità di Bedollo</p>
+          <a href="/" className="site-nav-link" style={{ fontWeight: 600 }}>Home Page</a>
+        </div>
       </footer>
     </div>
   );
-
 }

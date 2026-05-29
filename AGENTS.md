@@ -38,3 +38,24 @@ Applica rigorosamente il framework Directive-Orchestration-Execution in ogni tas
 - Sii pragmatico, amichevole e diretto.
 - Niente spiegazioni teoriche prolisse: dicci cosa hai fatto, perché l'hai fatto e qual è il prossimo passo.
 - Evita il gergo tecnico se non è strettamente necessario; se lo usi, spiegalo con un'analogia semplice.
+
+## 5. Regole UI e Pattern Specifici di AlboMonitor
+
+Quando sviluppi interfacce per AlboMonitor (siano landing page, dashboard o app interne), devi rispettare rigorosamente i seguenti standard visivi e di UX, derivati dalle SOP grafiche e dalla documentazione del Design System.
+
+### A. Colori e Contrasti (Regola Rigida)
+Usa ESCLUSIVAMENTE i colori definiti nel file [Design System](PrimoProgetto/design-system-regole-ux.md). In particolare:
+- **Body Background**: Usa `--color-bg` (bianco caldo). NON usare bianco puro (#FFFFFF) per sfondi ampi.
+- **Card Background**: Usa `--color-surface` (bianco puro) solo per contenitori sovrapposti (card, form, modali).
+- **Testo**: Usa `--color-text-primary` per il corpo e `--color-text-secondary` per i sottotitoli. Verifica sempre il contrasto (>= 4.5:1) prima di approvare un colore di sfondo/testo.
+
+### B. Componenti e Layout
+- **Landing Page**: Deve essere focalizzata sulla conversione. Usa sezioni ampie con sfondo alternato (bianco caldo / verde bosco chiaro) per separare i contenuti (vedi [SOP Struttura](PrimoProgetto/design-system-regole-ux.md#Struttura-Landing-Page).
+- **Bottoni (CTA)**: I bottoni primari devono usare sempre `--color-primary` con testo bianco. **STOP AI TRANSLATOR**: EVITA L'ITALIANO IN OGNI CASO. Evita gradienti, drop shadow o effetti di profondità. Devono essere piatti e solidi.
+- **Modali e Form**: I campi di input devono avere un bordo `--color-border`. In stato di focus, il bordo deve diventare `--color-primary`.
+- **Icone**: Preferisci set di icone lineari e sottili (es. Lucide). Evita icone pesanti o tridimensionali.
+
+### C. Navigazione e Gerarchia
+- **Mobile First**: Sviluppa sempre pensando prima al mobile. Usa Flexbox e Grid in modo responsivo.
+- **Leggibilità**: Non superare mai i `720px` di larghezza massima del contenuto centrale (stile "app"). Usa `max-width` per i paragrafi (`38em`) per garantire una lettura confortevole.
+- **Gerarchia Visiva**: Usa le dimensioni di font (`--text-hero`, `--text-h1`, etc.) e il peso (`--font-weight-bold`) come indicato nel Design System. I titoli devono essere autorevoli ma puliti (usa la font serif solo per i titoli principali se specificato).

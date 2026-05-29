@@ -1,8 +1,8 @@
-"use server";
-
 import * as cheerio from 'cheerio';
 import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
+import { PDFParse } from 'pdf-parse';
+import { sendNotifications } from './notifications';
 
 const ALBO_BASE_URL = 'https://albobedollo.gisco-tn.it';
 const ALBO_URL = `${ALBO_BASE_URL}/Albo-Pretorio/Pubblicazioni`;
@@ -18,6 +18,11 @@ const FETCH_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
 };
+
+interface PdfAttachment {
+    url: string;
+    label: string;
+}
 
 interface NoticeCard {
     title: string;
@@ -87,53 +92,80 @@ function extractCardsFromHTML($: cheerio.CheerioAPI): NoticeCard[] {
 }
 
 /**
- * Fetches and extracts text content from a detail page or PDF, returning both the text and the final PDF URL
+ * Fetches and extracts text content from a detail page,
+ * returning the text and ALL PDF attachments found on the page.
  */
-async function extractDetailContent(detailUrl: string): Promise<{ text: string; pdfUrl: string | null }> {
+export async function extractDetailContent(detailUrl: string): Promise<{ text: string; pdfAttachments: PdfAttachment[] }> {
     try {
         const res = await fetch(detailUrl, { headers: FETCH_HEADERS });
-        if (!res.ok) return { text: "", pdfUrl: null };
+        if (!res.ok) return { text: "", pdfAttachments: [] };
         const html = await res.text();
         const $ = cheerio.load(html);
 
-        // Try to find a PDF link on the detail page
-        let finalPdfUrl: string | null = null;
-        const pdfHref = $('a[href$=".pdf"]').first().attr('href') || $('a:contains("Download")').first().attr('href');
-        
-        if (pdfHref) {
-            finalPdfUrl = pdfHref.startsWith('http') ? pdfHref : new URL(pdfHref, ALBO_BASE_URL).toString();
-            try {
-                const pdfRes = await fetch(finalPdfUrl, { headers: FETCH_HEADERS });
-                if (pdfRes.ok) {
-                    const buffer = Buffer.from(await pdfRes.arrayBuffer());
-                    const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default;
-                    const data = await pdfParse(buffer);
-                    if (data.text && data.text.trim().length > 50) {
-                        return { text: data.text.trim(), pdfUrl: finalPdfUrl };
-                    }
+        // Find ALL PDF links on the page (case-insensitive: .pdf, .PDF, .Pdf, etc.)
+        const pdfAttachments: PdfAttachment[] = [];
+        $('a').each((_, el) => {
+            const href = $(el).attr('href') || '';
+            if (/\.pdf$/i.test(href)) {
+                const fullUrl = href.startsWith('http') ? href : new URL(href, ALBO_BASE_URL).toString();
+                // Extract a label from the link text or parent context
+                const rawLabel = $(el).text().trim()
+                    || $(el).attr('aria-label')
+                    || $(el).attr('title')
+                    || 'Documento PDF';
+                const label = rawLabel.replace(/\s+/g, ' ').substring(0, 100);
+                // Avoid duplicates
+                if (!pdfAttachments.some(p => p.url === fullUrl)) {
+                    pdfAttachments.push({ url: fullUrl, label });
                 }
-            } catch (pdfErr) {
-                console.log(`  ⚠️ Errore PDF parsing: ${(pdfErr as Error).message}`);
+            }
+        });
+
+        console.log(`     📎 Trovati ${pdfAttachments.length} allegati PDF`);
+
+        // 1. Extract text from the detail page itself
+        const pageText = $('main').text().trim() || $('body').text().trim();
+        let combinedText = `=== CONTENUTO PAGINA WEB DETTAGLIO ===\n${pageText.substring(0, 4000)}\n\n`;
+
+        // 2. Extract text from all PDFs and append them to combinedText
+        if (pdfAttachments.length > 0) {
+            combinedText += `=== CONTENUTO DOCUMENTI PDF ALLEGATI (${pdfAttachments.length}) ===\n`;
+            for (const pdf of pdfAttachments) {
+                try {
+                    console.log(`        📄 Estrazione testo da PDF: ${pdf.label}`);
+                    const pdfRes = await fetch(pdf.url, { headers: FETCH_HEADERS });
+                    if (pdfRes.ok) {
+                        const buffer = new Uint8Array(await pdfRes.arrayBuffer());
+                        const parser = new PDFParse({ data: buffer });
+                        const data = await parser.getText();
+                        const pdfText = data.text?.trim() || '';
+                        await parser.destroy();
+                        if (pdfText.length > 10) {
+                            combinedText += `\n--- INIZIO DOCUMENTO: ${pdf.label} ---\n${pdfText.substring(0, 15000)}\n--- FINE DOCUMENTO: ${pdf.label} ---\n`;
+                        }
+                    }
+                } catch (pdfErr) {
+                    console.log(`     ⚠️ Errore parsing PDF ${pdf.label}: ${(pdfErr as Error).message}`);
+                }
             }
         }
 
-        // Fallback: extract text from the detail page itself
-        const pageText = $('main').text().trim() || $('body').text().trim();
-        return { text: pageText.substring(0, 3000), pdfUrl: finalPdfUrl };
+        return { text: combinedText, pdfAttachments };
     } catch (err) {
         console.log(`  ⚠️ Errore pagina dettaglio: ${(err as Error).message}`);
-        return { text: "", pdfUrl: null };
+        return { text: "", pdfAttachments: [] };
     }
 }
 
 /**
  * Generates an AI summary using Gemini
  */
-async function generateAISummary(title: string, content: string, retryCount = 0): Promise<{ ai_title: string; summary_short: string; summary_long: string }> {
-    const fallback = { 
-        ai_title: title.substring(0, 100), 
-        summary_short: title.substring(0, 150), 
-        summary_long: "Riassunto non disponibile." 
+async function generateAISummary(title: string, content: string, retryCount = 0): Promise<{ ai_title: string; summary_short: string; summary_long: string; relevance: string }> {
+    const fallback = {
+        ai_title: title.substring(0, 100),
+        summary_short: title.substring(0, 150),
+        summary_long: "Riassunto non disponibile.",
+        relevance: "locale",
     };
 
     if (!process.env.GEMINI_API_KEY) return fallback;
@@ -142,12 +174,26 @@ async function generateAISummary(title: string, content: string, retryCount = 0)
         const textToAnalyze = content && content.length > 50 ? content : title;
 
         const response = await ai.models.generateContent({
-            model: "gemini-2.0-flash",
-            contents: `Sei un esperto assistente per i cittadini del Comune di Bedollo. Devi analizzare questo testo di un bando/atto dell'Albo Pretorio e restituire SOLO un oggetto JSON valido (senza markdown, senza backtick) con esattamente questi 3 campi:
+            model: "gemini-2.5-flash",
+            contents: `Sei un assistente editoriale per i cittadini del Comune di Bedollo (Trentino). Analizzi atti dell'Albo Pretorio e produci riassunti chiari, utili e senza ridondanze.
 
-1) "ai_title": Titolo semplificato e super chiaro in linguaggio non burocratico. Non troncare, usa una frase sensata (es: Senso unico alternato sulla S.P. 83 a Centrale).
-2) "summary_short": Breve riassunto/abstract, fluido, che espanda leggermente il titolo dando il contesto immediato senza troppi dettagli (massimo 2 frasi).
-3) "summary_long": Riassunto per esteso. Una panoramica completa di tutte le informazioni utili presenti nel documento (date, luoghi, importi, procedure, moduli), scritte in linguaggio semplice, cordiale e diretto al punto, organizzato se serve a punti elenco (usando \n e - all'interno della stringa JSON). Rimuovi ogni burocratismo inutile.
+REGOLE FONDAMENTALI:
+- I 3 campi testuali (ai_title, summary_short, summary_long) devono essere COMPLEMENTARI, non ripetitivi. Ogni campo aggiunge informazioni nuove rispetto al precedente.
+- ai_title cattura l'essenza in una frase. summary_short aggiunge il contesto immediato (chi, quando, perché) SENZA ripetere il titolo. summary_long dettaglia tutto il resto (date, luoghi, importi, procedure, contatti) SENZA ripetere titolo e abstract.
+- Scrivi in italiano corrente, cordiale e diretto. Zero burocratese.
+- summary_long deve essere conciso ma completo: massimo 6-8 righe di testo o 5-6 bullet points. Vai dritto alle informazioni utili.
+- Se il testo fornito è scarno (solo titolo e metadati), fai del tuo meglio con le informazioni disponibili. Non inventare dettagli, ma interpreta il tipo di atto dalla categoria e dal titolo per fornire un riassunto utile.
+
+CAMPO SPECIALE - "relevance":
+Determina se l'atto riguarda direttamente il territorio/comunità di Bedollo oppure se è una pubblicazione che il Comune è obbligato a pubblicare ma proviene da altri enti o territori.
+- "locale" = riguarda Bedollo, i suoi abitanti, le sue strade, i suoi servizi
+- "esterno" = proviene da altri comuni, provincia, enti terzi; pubblicato per obbligo ma non riguarda direttamente Bedollo
+
+Restituisci SOLO un oggetto JSON valido (no markdown, no backtick) con questi 4 campi:
+1) "ai_title": string - Titolo semplificato, chiaro, non troncato
+2) "summary_short": string - 1-2 frasi che aggiungono contesto al titolo (non ripeterlo)
+3) "summary_long": string - Dettagli utili rimanenti, organizzati a punti se serve (usa \\n e - nella stringa). Breve ed efficace.
+4) "relevance": "locale" | "esterno"
 
 Testo da analizzare:
 ${textToAnalyze.substring(0, 10000)}`,
@@ -163,6 +209,7 @@ ${textToAnalyze.substring(0, 10000)}`,
                 ai_title: parsed.ai_title || fallback.ai_title,
                 summary_short: parsed.summary_short || fallback.summary_short,
                 summary_long: parsed.summary_long || fallback.summary_long,
+                relevance: parsed.relevance === 'esterno' ? 'esterno' : 'locale',
             };
         }
     } catch (err) {
@@ -180,26 +227,31 @@ ${textToAnalyze.substring(0, 10000)}`,
 }
 
 /**
- * Main scraping function — fetches all pages, extracts notices, generates AI summaries, and stores in DB
+ * Main scraping function — fetches only the most recent notices, generates AI summaries, and stores in DB.
+ * @param maxNotices - Maximum number of new notices to process per run (default: 6)
  */
-export async function scrapeLatestNotices(maxPages: number = 6) {
+export async function scrapeLatestNotices(maxNotices: number = 6) {
     if (!process.env.GEMINI_API_KEY || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
         console.warn("⛔ Scraping saltato: variabili d'ambiente mancanti.");
         return [];
     }
 
-    console.log("🔍 Inizio scraping Albo Pretorio di Bedollo...\n");
+    console.log(`🔍 Inizio scraping Albo Pretorio di Bedollo (max ${maxNotices} nuovi avvisi)...\n`);
     const allResults = [];
+    let processed = 0;
 
-    for (let page = 1; page <= maxPages; page++) {
+    const MAX_PAGES = 10; // Limite massimo di pagine per evitare loop infiniti
+
+    // Paginate only as far as needed to find maxNotices new entries
+    for (let page = 1; processed < maxNotices && page <= MAX_PAGES; page++) {
         const url = page === 1 ? ALBO_URL : `${ALBO_URL}?pagina=${page}`;
-        console.log(`📄 Pagina ${page}/${maxPages}: ${url}`);
+        console.log(`📄 Pagina ${page}: ${url}`);
 
         try {
             const res = await fetch(url, { headers: FETCH_HEADERS });
             if (!res.ok) {
-                console.log(`  ⚠️ Pagina ${page} ritorna status ${res.status}, salto.`);
-                continue;
+                console.log(`  ⚠️ Pagina ${page} ritorna status ${res.status}, fermo la paginazione.`);
+                break;
             }
             const html = await res.text();
             const $ = cheerio.load(html);
@@ -213,6 +265,8 @@ export async function scrapeLatestNotices(maxPages: number = 6) {
             }
 
             for (const card of cards) {
+                if (processed >= maxNotices) break;
+
                 // Check if already exists in DB
                 const { data: existing } = await supabase
                     .from('notices')
@@ -227,22 +281,38 @@ export async function scrapeLatestNotices(maxPages: number = 6) {
 
                 console.log(`  🆕 Nuovo: [${card.category}] ${card.atto_number} - ${card.title.substring(0, 60)}...`);
 
-                // Extract content from detail page and find PDF url
+                // Extract content from detail page and find all PDF attachments
                 const detailData = await extractDetailContent(card.link);
-                console.log(`     📖 Contenuto estratto: ${detailData.text.length} caratteri (PDF: ${detailData.pdfUrl ? 'Trovato' : 'No'})`);
+                console.log(`     📖 Contenuto estratto: ${detailData.text.length} caratteri (PDF: ${detailData.pdfAttachments.length} allegati)`);
+
+                // Enrich content with card metadata when text is insufficient
+                let contentForAI = detailData.text;
+                if (!contentForAI || contentForAI.length < 50) {
+                    const metaParts = [
+                        `Titolo: ${card.title}`,
+                        card.category ? `Categoria: ${card.category}` : '',
+                        card.atto_number ? `Numero atto: ${card.atto_number}` : '',
+                        card.affissione_start ? `Periodo affissione: dal ${card.affissione_start} al ${card.affissione_end || 'N/D'}` : '',
+                    ].filter(Boolean);
+                    contentForAI = metaParts.join('\n');
+                    console.log(`     ⚠️ Contenuto insufficiente, uso metadati della card per l'AI`);
+                }
 
                 // Generate AI summary
-                const summary = await generateAISummary(card.title, detailData.text);
+                const summary = await generateAISummary(card.title, contentForAI);
                 console.log(`     🤖 AI Titolo: "${summary.ai_title}"`);
 
                 // Insert into DB
+                const firstPdfUrl = detailData.pdfAttachments.length > 0 ? detailData.pdfAttachments[0].url : null;
                 const { data: inserted, error: insErr } = await supabase.from('notices').insert({
                     title: card.title,
                     link: card.link,
-                    pdf_url: detailData.pdfUrl,
+                    pdf_url: firstPdfUrl,
+                    pdf_urls: detailData.pdfAttachments,
                     ai_title: summary.ai_title,
                     summary_short: summary.summary_short,
                     summary_long: summary.summary_long,
+                    relevance: summary.relevance,
                     category: card.category,
                     atto_number: card.atto_number,
                     affissione_start: card.affissione_start,
@@ -254,12 +324,15 @@ export async function scrapeLatestNotices(maxPages: number = 6) {
                     console.error(`     ❌ Errore inserimento:`, insErr.message);
                 } else if (inserted) {
                     allResults.push(inserted);
-                    console.log(`     ✅ Salvato!`);
+                    processed++;
+                    console.log(`     ✅ Salvato! (${processed}/${maxNotices})`);
                 }
 
-                // Delay of 5 seconds to avoid Gemini API 429 errors (free tier is 15 RPM)
-                console.log(`     ⏳ Attesa 5 secondi per limite API Gemini...`);
-                await new Promise(r => setTimeout(r, 5000));
+                // Delay to respect Gemini API rate limits
+                if (processed < maxNotices) {
+                    console.log(`     ⏳ Attesa 3 secondi per limite API Gemini...`);
+                    await new Promise(r => setTimeout(r, 3000));
+                }
             }
         } catch (error) {
             console.error(`  ❌ Errore pagina ${page}:`, (error as Error).message);
@@ -267,5 +340,16 @@ export async function scrapeLatestNotices(maxPages: number = 6) {
     }
 
     console.log(`\n✅ Scraping completato: ${allResults.length} nuovi avvisi inseriti.`);
+
+    if (allResults.length > 0) {
+        console.log(`📣 Trovati ${allResults.length} nuovi avvisi! Innesco l'invio delle notifiche a tutti gli iscritti...`);
+        try {
+            const { totalSent } = await sendNotifications();
+            console.log(`✉️ Notifiche inviate automaticamente a ${totalSent} utenti.`);
+        } catch (notifErr) {
+            console.error("❌ Errore durante l'invio automatico delle notifiche:", notifErr);
+        }
+    }
+
     return allResults;
 }

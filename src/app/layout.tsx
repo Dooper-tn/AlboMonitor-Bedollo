@@ -1,14 +1,21 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Source_Serif_4, DM_Sans } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
+const sourceSerif = Source_Serif_4({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-heading",
+  weight: ["600", "700"],
+});
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  variable: "--font-body",
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
-  title: "AlboMonitor – Albo Pretorio di Bedollo",
+  title: "AlboMonitor Bedollo – Albo Pretorio Semplificato",
   description:
     "Monitora automaticamente l'albo pretorio del comune di Bedollo. Ricevi riassunti AI dei nuovi bandi direttamente nella tua email.",
 };
@@ -20,7 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="it">
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className={`${sourceSerif.variable} ${dmSans.variable} antialiased`}>
         {children}
       </body>
     </html>
