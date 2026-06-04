@@ -151,25 +151,33 @@ gcloud run services update albomonitor \
 
 # 10. Configurazione del Cron Job con Cloud Scheduler
 echo "⏰ 10. Configurazione di Cloud Scheduler per lo scraping automatico..."
+
+SCHEDULER_REGION="$REGION"
+if [ "$REGION" = "europe-west8" ]; then
+  # La regione di Milano (europe-west8) non supporta ancora Cloud Scheduler, quindi usiamo europe-west1 (Belgio)
+  SCHEDULER_REGION="europe-west1"
+  echo "ℹ️ La regione di Milano (europe-west8) non supporta Cloud Scheduler. Il cron job verrà creato in $SCHEDULER_REGION (Belgio) e chiamerà l'app a Milano."
+fi
+
 # Verifichiamo se il job esiste già
-if gcloud scheduler jobs describe scraper-job --location="$REGION" >/dev/null 2>&1; then
-  echo "Aggiornamento del job scraper-job esistente..."
+if gcloud scheduler jobs describe scraper-job --location="$SCHEDULER_REGION" >/dev/null 2>&1; then
+  echo "Aggiornamento del job scraper-job esistente in $SCHEDULER_REGION..."
   gcloud scheduler jobs update http scraper-job \
     --schedule="0 8,12,16,20 * * 1-6" \
     --uri="$RUN_URL/api/test-scrape?max=10" \
     --http-method=GET \
     --headers="Authorization=Bearer $CRON_SECRET" \
     --time-zone="Europe/Rome" \
-    --location="$REGION" >/dev/null
+    --location="$SCHEDULER_REGION" >/dev/null
 else
-  echo "Creazione del nuovo job scraper-job..."
+  echo "Creazione del nuovo job scraper-job in $SCHEDULER_REGION..."
   gcloud scheduler jobs create http scraper-job \
     --schedule="0 8,12,16,20 * * 1-6" \
     --uri="$RUN_URL/api/test-scrape?max=10" \
     --http-method=GET \
     --headers="Authorization=Bearer $CRON_SECRET" \
     --time-zone="Europe/Rome" \
-    --location="$REGION" >/dev/null
+    --location="$SCHEDULER_REGION" >/dev/null
 fi
 
 echo "=========================================================="
