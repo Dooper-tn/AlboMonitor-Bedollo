@@ -163,7 +163,7 @@ if gcloud scheduler jobs describe scraper-job --location="$SCHEDULER_REGION" >/d
     --schedule="0 8,12,16,20 * * 1-6" \
     --uri="$RUN_URL/api/test-scrape?max=10" \
     --http-method=GET \
-    --headers="Authorization=Bearer $CRON_SECRET" \
+    --update-headers="Authorization=Bearer $CRON_SECRET" \
     --time-zone="Europe/Rome" \
     --location="$SCHEDULER_REGION" >/dev/null
 else
