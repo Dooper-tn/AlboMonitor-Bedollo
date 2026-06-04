@@ -11,7 +11,14 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const isVertexAI = process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true';
+const ai = isVertexAI
+    ? new GoogleGenAI({
+        vertexai: true,
+        project: process.env.GOOGLE_CLOUD_PROJECT,
+        location: process.env.GOOGLE_CLOUD_LOCATION || 'europe-west8'
+      })
+    : new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 const FETCH_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -168,7 +175,8 @@ async function generateAISummary(title: string, content: string, retryCount = 0)
         relevance: "locale",
     };
 
-    if (!process.env.GEMINI_API_KEY) return fallback;
+    const canUseAI = isVertexAI || !!process.env.GEMINI_API_KEY;
+    if (!canUseAI) return fallback;
 
     try {
         const textToAnalyze = content && content.length > 50 ? content : title;
