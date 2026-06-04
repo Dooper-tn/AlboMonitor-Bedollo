@@ -17,8 +17,7 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Variabili placeholder per evitare crash di compilazione (verranno sovrascritte a runtime da Cloud Run)
-ENV NEXT_PUBLIC_SUPABASE_URL="https://placeholder.supabase.co"
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY="placeholder"
+ENV SUPABASE_URL="https://placeholder.supabase.co"
 ENV SUPABASE_SERVICE_ROLE_KEY="placeholder"
 ENV GMAIL_USER="placeholder"
 ENV GMAIL_APP_PASSWORD="placeholder"

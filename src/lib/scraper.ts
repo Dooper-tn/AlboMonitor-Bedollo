@@ -7,7 +7,7 @@ import { sendNotifications } from './notifications';
 const ALBO_BASE_URL = 'https://albobedollo.gisco-tn.it';
 const ALBO_URL = `${ALBO_BASE_URL}/Albo-Pretorio/Pubblicazioni`;
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 

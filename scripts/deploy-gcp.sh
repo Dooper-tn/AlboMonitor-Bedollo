@@ -44,16 +44,14 @@ clean_value() {
 }
 
 # Estrazione variabili da .env.local
-NEXT_PUBLIC_SUPABASE_URL=$(grep "^NEXT_PUBLIC_SUPABASE_URL=" .env.local | cut -d'=' -f2- | tr -d '\r')
-NEXT_PUBLIC_SUPABASE_ANON_KEY=$(grep "^NEXT_PUBLIC_SUPABASE_ANON_KEY=" .env.local | cut -d'=' -f2- | tr -d '\r')
+SUPABASE_URL=$(grep -E "^(SUPABASE_URL|NEXT_PUBLIC_SUPABASE_URL)=" .env.local | head -n1 | cut -d'=' -f2- | tr -d '\r')
 SUPABASE_SERVICE_ROLE_KEY=$(grep "^SUPABASE_SERVICE_ROLE_KEY=" .env.local | cut -d'=' -f2- | tr -d '\r')
 GMAIL_USER=$(grep "^GMAIL_USER=" .env.local | cut -d'=' -f2- | tr -d '\r')
 GMAIL_APP_PASSWORD=$(grep "^GMAIL_APP_PASSWORD=" .env.local | cut -d'=' -f2- | tr -d '\r')
 CRON_SECRET=$(grep "^CRON_SECRET=" .env.local | cut -d'=' -f2- | tr -d '\r')
 
 # Pulisce i valori estratti
-NEXT_PUBLIC_SUPABASE_URL=$(clean_value "$NEXT_PUBLIC_SUPABASE_URL")
-NEXT_PUBLIC_SUPABASE_ANON_KEY=$(clean_value "$NEXT_PUBLIC_SUPABASE_ANON_KEY")
+SUPABASE_URL=$(clean_value "$SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY=$(clean_value "$SUPABASE_SERVICE_ROLE_KEY")
 GMAIL_USER=$(clean_value "$GMAIL_USER")
 GMAIL_APP_PASSWORD=$(clean_value "$GMAIL_APP_PASSWORD")
@@ -80,15 +78,14 @@ create_or_update_secret() {
 }
 
 echo "🔐 4. Salvataggio delle chiavi in Secret Manager..."
-create_or_update_secret "NEXT_PUBLIC_SUPABASE_URL" "$NEXT_PUBLIC_SUPABASE_URL"
-create_or_update_secret "NEXT_PUBLIC_SUPABASE_ANON_KEY" "$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+create_or_update_secret "SUPABASE_URL" "$SUPABASE_URL"
 create_or_update_secret "SUPABASE_SERVICE_ROLE_KEY" "$SUPABASE_SERVICE_ROLE_KEY"
 create_or_update_secret "GMAIL_USER" "$GMAIL_USER"
 create_or_update_secret "GMAIL_APP_PASSWORD" "$GMAIL_APP_PASSWORD"
 create_or_update_secret "CRON_SECRET" "$CRON_SECRET"
 
 # Creiamo un placeholder per il BASE_URL (verrà aggiornato dopo il deploy di Cloud Run)
-create_or_update_secret "NEXT_PUBLIC_BASE_URL" "https://change-me-after-deploy.run.app"
+create_or_update_secret "BASE_URL" "https://change-me-after-deploy.run.app"
 
 echo "✅ Segreti configurati in Secret Manager!"
 
@@ -133,7 +130,7 @@ gcloud run deploy albomonitor \
   --platform managed \
   --allow-unauthenticated \
   --set-env-vars="GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION" \
-  --set-secrets="NEXT_PUBLIC_SUPABASE_URL=NEXT_PUBLIC_SUPABASE_URL:latest,NEXT_PUBLIC_SUPABASE_ANON_KEY=NEXT_PUBLIC_SUPABASE_ANON_KEY:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,GMAIL_USER=GMAIL_USER:latest,GMAIL_APP_PASSWORD=GMAIL_APP_PASSWORD:latest,CRON_SECRET=CRON_SECRET:latest,NEXT_PUBLIC_BASE_URL=NEXT_PUBLIC_BASE_URL:latest"
+  --set-secrets="SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,GMAIL_USER=GMAIL_USER:latest,GMAIL_APP_PASSWORD=GMAIL_APP_PASSWORD:latest,CRON_SECRET=CRON_SECRET:latest,BASE_URL=BASE_URL:latest"
 
 # 9. Recupero URL di Cloud Run e aggiornamento del BASE_URL
 echo "🔗 9. Recupero dell'URL pubblico generato..."
@@ -141,13 +138,13 @@ RUN_URL=$(gcloud run services describe albomonitor --region "$REGION" --format='
 
 echo "URL dell'app: $RUN_URL"
 echo "Aggiornamento del BASE_URL con il valore definitivo in Secret Manager..."
-create_or_update_secret "NEXT_PUBLIC_BASE_URL" "$RUN_URL"
+create_or_update_secret "BASE_URL" "$RUN_URL"
 
 # Forza il caricamento del nuovo segreto su Cloud Run aggiornando il servizio
 echo "🔄 Sincronizzazione dell'URL definitivo su Cloud Run..."
 gcloud run services update albomonitor \
   --region "$REGION" \
-  --update-secrets="NEXT_PUBLIC_BASE_URL=NEXT_PUBLIC_BASE_URL:latest"
+  --update-secrets="BASE_URL=BASE_URL:latest"
 
 # 10. Configurazione del Cron Job con Cloud Scheduler
 echo "⏰ 10. Configurazione di Cloud Scheduler per lo scraping automatico..."
