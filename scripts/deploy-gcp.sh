@@ -116,14 +116,12 @@ SERVICE_ACCOUNT="$PROJECT_NUMBER-compute@developer.gserviceaccount.com"
 echo "Assegnazione ruolo Secret Manager Accessor..."
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$SERVICE_ACCOUNT" \
-  --role="roles/secretmanager.secretAccessor" \
-  --condition=none >/dev/null
+  --role="roles/secretmanager.secretAccessor" >/dev/null
 
 echo "Assegnazione ruolo Vertex AI User (per Gemini)..."
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$SERVICE_ACCOUNT" \
-  --role="roles/aiplatform.user" \
-  --condition=none >/dev/null
+  --role="roles/aiplatform.user" >/dev/null
 
 echo "✅ Permessi configurati!"
 
