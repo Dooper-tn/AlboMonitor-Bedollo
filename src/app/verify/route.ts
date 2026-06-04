@@ -9,11 +9,25 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
     try {
-        const url = new URL(request.url);
-        const token = url.searchParams.get('token');
+        // Estrai l'URL originale dalla richiesta
+        const reqUrl = new URL(request.url);
+
+        // Correzione per il Reverse Proxy di Google Cloud Run
+        const forwardedHost = request.headers.get('x-forwarded-host');
+        const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+
+        if (forwardedHost) {
+            reqUrl.host = forwardedHost;
+            reqUrl.protocol = `${forwardedProto}:`;
+            reqUrl.port = ''; // Rimuove la porta interna (es. 8080)
+        }
+
+        // Usiamo l'URL pubblico come base per tutti i redirect
+        const baseUrl = reqUrl.origin;
+        const token = reqUrl.searchParams.get('token');
 
         if (!token) {
-            return NextResponse.redirect(new URL('/?error=token_mancante', request.url));
+            return NextResponse.redirect(new URL('/?error=token_mancante', baseUrl));
         }
 
         // Fetch subscriber to check if they exist
@@ -25,7 +39,7 @@ export async function GET(request: Request) {
 
         if (fetchErr || !subscriber) {
             console.error("Verification error - subscriber not found for token:", token, fetchErr);
-            return NextResponse.redirect(new URL('/?error=token_non_valido', request.url));
+            return NextResponse.redirect(new URL('/?error=token_non_valido', baseUrl));
         }
 
         // Update status to active
@@ -36,16 +50,25 @@ export async function GET(request: Request) {
 
         if (updateErr) {
             console.error("Verification error - failed to update status:", updateErr);
-            return NextResponse.redirect(new URL('/?error=db_error', request.url));
+            return NextResponse.redirect(new URL('/?error=db_error', baseUrl));
         }
 
         console.log(`Email verificata con successo per ${subscriber.email}`);
 
         // Redirect to preferences page with verify success flag
-        return NextResponse.redirect(new URL(`/preferenze?token=${token}&verify=success`, request.url));
+        return NextResponse.redirect(new URL(`/preferenze?token=${token}&verify=success`, baseUrl));
 
     } catch (err) {
         console.error("Verification unexpected error:", err);
-        return NextResponse.redirect(new URL('/?error=unknown', request.url));
+        
+        // Costruiamo un URL di fallback in caso di errore inaspettato
+        const fallbackUrl = new URL(request.url);
+        const host = request.headers.get('x-forwarded-host');
+        if (host) {
+            fallbackUrl.host = host;
+            fallbackUrl.protocol = 'https:';
+            fallbackUrl.port = '';
+        }
+        return NextResponse.redirect(new URL('/?error=unknown', fallbackUrl.origin));
     }
 }
